@@ -10,5 +10,6 @@ mp4 = { git = "https://github.com/Kato-emb/mp4-rust.git", branch = "fix-mvex" }
 
 thiserror = { version = "1.0" }
 byteorder = { version = "1.5.0" }
+chrono = { version = "0.4.38" }
 
 serde = { version = "1.0", features = ["derive"] }

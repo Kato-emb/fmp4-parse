@@ -12,6 +12,7 @@ use segment::{InitialSegment, MediaSegment};
 
 mod error;
 mod segment;
+mod writer;
 
 pub type Result<T> = std::result::Result<T, Fmp4ParseError>;
 
