@@ -1,0 +1,14 @@
+[package]
+name = "fmp4-parse"
+version = "0.1.0"
+repository = "https://github.com/Kato-emb/fmp4-parse"
+authors = ["Ryouhei Kato<r-kato@musen.co.jp>"]
+edition = "2021"
+
+[dependencies]
+mp4 = { git = "https://github.com/Kato-emb/mp4-rust.git", branch = "fix-mvex" }
+
+thiserror = { version = "1.0" }
+byteorder = { version = "1.5.0" }
+
+serde = { version = "1.0", features = ["derive"] }
