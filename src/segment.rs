@@ -104,7 +104,8 @@ pub struct MediaSegment {
 }
 
 impl MediaSegment {
-    pub fn stts_entries(&self, track_id: u32) -> Vec<SttsEntry> {
+    /// Time-to-sample table
+    pub fn stts_entries(&self, track_id: u32, default: u32) -> Vec<SttsEntry> {
         let mut entries: Vec<SttsEntry> = Vec::new();
 
         for chunk in self.chunks.iter() {
@@ -121,7 +122,7 @@ impl MediaSegment {
                     .as_ref()
                     .and_then(|trun| Some(trun.sample_count))
                     .unwrap_or(0);
-                stts_entry.sample_delta = traf.tfhd.default_sample_duration.unwrap_or(0);
+                stts_entry.sample_delta = traf.tfhd.default_sample_duration.unwrap_or(default);
             }
 
             entries.push(stts_entry);
@@ -130,10 +131,11 @@ impl MediaSegment {
         entries
     }
 
+    /// Sample-to-chunk table
     pub fn stsc_entries(
         &self,
         track_id: u32,
-        default_idx: u32,
+        default: u32,
         chunk_offset: Option<u32>,
         sample_offset: Option<u32>,
     ) -> (Vec<StscEntry>, u32, u32) {
@@ -152,12 +154,12 @@ impl MediaSegment {
                 if !entries.last().is_some_and(|entry| {
                     entry.samples_per_chunk == trun.sample_count
                         && entry.sample_description_index
-                            == traf.tfhd.sample_description_index.unwrap_or(default_idx)
+                            == traf.tfhd.sample_description_index.unwrap_or(default)
                 }) {
                     let mut stsc_entry = StscEntry::default();
 
                     stsc_entry.sample_description_index =
-                        traf.tfhd.sample_description_index.unwrap_or(default_idx);
+                        traf.tfhd.sample_description_index.unwrap_or(default);
                     stsc_entry.first_chunk = chunk_count;
                     stsc_entry.samples_per_chunk = trun.sample_count;
                     stsc_entry.first_sample = sample_count;
@@ -173,7 +175,8 @@ impl MediaSegment {
         (entries, chunk_count, sample_count)
     }
 
-    pub fn stsz_entries(&self, track_id: u32) -> Vec<u32> {
+    /// Sample size table
+    pub fn stsz_entries(&self, track_id: u32, default: u32) -> Vec<u32> {
         let mut entries: Vec<u32> = Vec::new();
 
         for chunk in self.chunks.iter() {
@@ -184,11 +187,12 @@ impl MediaSegment {
                 .find(|traf| traf.tfhd.track_id == track_id)
             {
                 let trun = traf.trun.as_ref().unwrap();
-                if let Some(def_size) = traf.tfhd.default_sample_size {
-                    let size = trun.sample_count as usize;
-                    entries.extend(vec![def_size; size]);
-                } else {
+
+                if !trun.sample_sizes.is_empty() {
                     entries.extend(trun.sample_sizes.as_slice());
+                } else {
+                    let sample_size = traf.tfhd.default_sample_size.unwrap_or(default);
+                    entries.extend(vec![sample_size; trun.sample_count as usize]);
                 }
             }
         }
@@ -303,10 +307,10 @@ mod tests {
         let mut reader = Cursor::new(data);
         let media = MediaSegment::read(&mut reader).expect("Failed to parse fragmented media data");
 
-        let entries = media.stts_entries(1);
+        let entries = media.stts_entries(1, 0);
         println!("{:?}", entries);
         println!("{:?}", media.stsc_entries(1, 1, None, None));
-        let stsz = media.stsz_entries(1);
+        let stsz = media.stsz_entries(1, 0);
         println!("{:?}", stsz.len());
 
         let mut copy_path = path.clone();
@@ -320,6 +324,7 @@ mod tests {
             MediaSegment::read(&mut reader).expect("Failed to parse fragmented media data");
 
         assert_eq!(media, copy_media);
+        println!("{:#?}", media.chunks[0].moof);
 
         std::fs::remove_file(copy_path).unwrap();
     }
