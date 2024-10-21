@@ -135,6 +135,7 @@ impl FMp4Config {
 pub struct Track {
     data: TrackData,
     stts_entries: Vec<SttsEntry>,
+    stss_entries: Vec<u32>,
     stsc_entries: Vec<StscEntry>,
     stsz_entries: Vec<u32>,
     co64_entries: Vec<u64>,
@@ -170,6 +171,7 @@ impl<W: Write + Seek> HybridMp4Writer<W> {
                 Track {
                     data: data.clone(),
                     stts_entries: Vec::new(),
+                    stss_entries: Vec::new(),
                     stsc_entries: Vec::new(),
                     stsz_entries: Vec::new(),
                     co64_entries: Vec::new(),
@@ -193,6 +195,7 @@ impl<W: Write + Seek> HybridMp4Writer<W> {
                 .stts_entries
                 .extend(media.stts_entries(*track_id, track.data.extend.default_sample_duration));
 
+            track.stss_entries.push(track.sample_offset);
             let (stsc_entries, chunk_count, sample_count) = media.stsc_entries(
                 *track_id,
                 track.data.extend.default_sample_description_index,
@@ -286,8 +289,10 @@ impl<W: Write + Seek> HybridMp4Writer<W> {
             stts.entries.append(&mut track.stts_entries);
             trak.mdia.minf.stbl.stts = stts;
 
-            // Need
-            trak.mdia.minf.stbl.stss = Some(StssBox::default());
+            // キーフレームの指定が必要
+            let mut stss = StssBox::default();
+            stss.entries.append(&mut track.stss_entries);
+            trak.mdia.minf.stbl.stss = Some(stss);
 
             let mut stsc = StscBox::default();
             stsc.entries.append(&mut track.stsc_entries);
