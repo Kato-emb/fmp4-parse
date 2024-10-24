@@ -84,6 +84,28 @@ impl Chunk {
 
         Ok(())
     }
+
+    pub fn duration(&self, track_id: u32, default_sample_duration: u32) -> u32 {
+        let Some(traf) = self
+            .moof
+            .trafs
+            .iter()
+            .find(|traf| traf.tfhd.track_id == track_id)
+        else {
+            return 0;
+        };
+
+        let trun = traf.trun.as_ref().unwrap();
+        if trun.sample_durations.len() == trun.sample_count as usize {
+            return trun.sample_durations.iter().sum();
+        } else {
+            let sample_duration = traf
+                .tfhd
+                .default_sample_duration
+                .unwrap_or(default_sample_duration);
+            return sample_duration.checked_mul(trun.sample_count).unwrap_or(0);
+        }
+    }
 }
 
 impl fmt::Display for Chunk {
@@ -206,6 +228,42 @@ impl MediaSegment {
             .map(|chunk| chunk.moof.box_size() + mp4::HEADER_SIZE + chunk.mdat.len() as u64)
             .sum()
     }
+
+    pub fn duration(&self, track_id: u32, default_sample_duration: u32) -> u64 {
+        self.chunks
+            .iter()
+            .map(|chunk| chunk.duration(track_id, default_sample_duration) as u64)
+            .sum()
+    }
+
+    pub fn update_sequence_number(&mut self, sequence_number: u32) {
+        for chunk in self.chunks.iter_mut() {
+            chunk.moof.mfhd.sequence_number = sequence_number;
+        }
+    }
+
+    pub fn update_decode_time(&mut self, track_id: u32, start_time: u64) {
+        let mut decode_time = start_time;
+
+        for chunk in self.chunks.iter_mut() {
+            let default_sample_duration = if let Some(traf) = chunk
+                .moof
+                .trafs
+                .iter_mut()
+                .find(|traf| traf.tfhd.track_id == track_id)
+            {
+                traf.tfdt
+                    .as_mut()
+                    .map(|tfdt| tfdt.base_media_decode_time = decode_time);
+
+                traf.tfhd.default_sample_duration
+            } else {
+                None
+            };
+
+            decode_time += chunk.duration(track_id, default_sample_duration.unwrap_or(0)) as u64;
+        }
+    }
 }
 
 impl Segment for MediaSegment {
@@ -284,7 +342,7 @@ mod tests {
         let data = std::fs::read(&path).unwrap();
         let mut reader = Cursor::new(data);
         let init = InitialSegment::read(&mut reader).expect("Failed to parse initial data");
-        println!("{init}");
+        println!("{init:?}");
 
         let mut copy_path = path.clone();
         copy_path.set_extension("copy");
@@ -302,21 +360,22 @@ mod tests {
 
     #[test]
     fn test_segment_media_file_parse() {
-        let path = PathBuf::from("resources/media.cmfv");
+        let path = PathBuf::from("/tmp/test.cmfv");
         let data = std::fs::read(&path).unwrap();
         let mut reader = Cursor::new(data);
-        let media = MediaSegment::read(&mut reader).expect("Failed to parse fragmented media data");
-
-        let entries = media.stts_entries(1, 0);
-        println!("{:?}", entries);
-        println!("{:?}", media.stsc_entries(1, 1, None, None));
-        let stsz = media.stsz_entries(1, 0);
-        println!("{:?}", stsz.len());
+        let mut media =
+            MediaSegment::read(&mut reader).expect("Failed to parse fragmented media data");
+        media.update_sequence_number(1);
+        media.update_decode_time(1, 0);
 
         let mut copy_path = path.clone();
         copy_path.set_extension("copy");
         let mut file = std::fs::File::create(&copy_path).unwrap();
         assert!(media.write(&mut file).is_ok());
+
+        for chunk in media.chunks.iter() {
+            println!("{:?}", chunk.moof);
+        }
 
         let data = std::fs::read(&copy_path).unwrap();
         let mut reader = Cursor::new(data);
@@ -324,7 +383,7 @@ mod tests {
             MediaSegment::read(&mut reader).expect("Failed to parse fragmented media data");
 
         assert_eq!(media, copy_media);
-        println!("{:#?}", media.chunks[0].moof);
+        // println!("{:#?}", media.chunks[0].moof);
 
         std::fs::remove_file(copy_path).unwrap();
     }
