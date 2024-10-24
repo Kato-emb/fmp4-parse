@@ -100,15 +100,13 @@ impl TryFrom<&MoovBox> for TrackData {
                 .ok_or(Fmp4ParseError::InvalidFormat("Missing mvex box"))?,
         );
 
-        let Some(trak) = value
-            .traks
-            .iter()
-            .find(|trak| trak.tkhd.track_id == extend.track_id)
-        else {
-            return Err(Fmp4ParseError::InvalidFormat("Missing trak box"));
-        };
-
-        let base = TrackBaseData::from(trak);
+        let base = TrackBaseData::from(
+            value
+                .traks
+                .iter()
+                .find(|trak| trak.tkhd.track_id == extend.track_id)
+                .ok_or(Fmp4ParseError::InvalidFormat("Missing trak box"))?,
+        );
 
         Ok(Self { base, extend })
     }
