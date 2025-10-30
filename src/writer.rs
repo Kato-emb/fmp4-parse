@@ -71,14 +71,14 @@ pub struct TrackExtendData {
     pub _default_sample_flags: u32,
 }
 
-impl From<&MvexBox> for TrackExtendData {
-    fn from(value: &MvexBox) -> Self {
+impl From<&TrexBox> for TrackExtendData {
+    fn from(value: &TrexBox) -> Self {
         Self {
-            track_id: value.trex.track_id,
-            default_sample_description_index: value.trex.default_sample_description_index,
-            default_sample_duration: value.trex.default_sample_duration,
-            default_sample_size: value.trex.default_sample_size,
-            _default_sample_flags: value.trex.default_sample_flags,
+            track_id: value.track_id,
+            default_sample_description_index: value.default_sample_description_index,
+            default_sample_duration: value.default_sample_duration,
+            default_sample_size: value.default_sample_size,
+            _default_sample_flags: value.default_sample_flags,
         }
     }
 }
@@ -87,29 +87,6 @@ impl From<&MvexBox> for TrackExtendData {
 pub struct TrackData {
     pub base: TrackBaseData,
     pub extend: TrackExtendData,
-}
-
-impl TryFrom<&MoovBox> for TrackData {
-    type Error = Fmp4ParseError;
-
-    fn try_from(value: &MoovBox) -> Result<Self> {
-        let extend = TrackExtendData::from(
-            value
-                .mvex
-                .as_ref()
-                .ok_or(Fmp4ParseError::InvalidFormat("Missing mvex box"))?,
-        );
-
-        let base = TrackBaseData::from(
-            value
-                .traks
-                .iter()
-                .find(|trak| trak.tkhd.track_id == extend.track_id)
-                .ok_or(Fmp4ParseError::InvalidFormat("Missing trak box"))?,
-        );
-
-        Ok(Self { base, extend })
-    }
 }
 
 #[derive(Debug, Default)]
@@ -122,8 +99,25 @@ pub struct FMp4Config {
 
 impl FMp4Config {
     pub fn add_track(&mut self, initial_segment: &InitialSegment) -> Result<()> {
-        let track_data = TrackData::try_from(&initial_segment.moov)?;
-        self.tracks.insert(track_data.extend.track_id, track_data);
+        let mvex = initial_segment
+            .moov
+            .mvex
+            .as_ref()
+            .ok_or(Fmp4ParseError::InvalidFormat("Missing mvex box"))?;
+
+        for trex in mvex.trex.iter() {
+            let extend = TrackExtendData::from(trex);
+            let base = TrackBaseData::from(
+                initial_segment
+                    .moov
+                    .traks
+                    .iter()
+                    .find(|trak| trak.tkhd.track_id == extend.track_id)
+                    .ok_or(Fmp4ParseError::InvalidFormat("Missing trak box"))?,
+            );
+            self.tracks
+                .insert(extend.track_id, TrackData { base, extend });
+        }
 
         Ok(())
     }
